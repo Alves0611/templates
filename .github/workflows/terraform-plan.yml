@@ -65,13 +65,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout templates repository
+        uses: actions/checkout@v4
+        with:
+          repository: Alves0611/templates
+          path: .github-templates
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
 
       - name: Setup Terraform
-        uses: ./actions/setup-terraform
+        uses: ./.github-templates/actions/setup-terraform
         with:
           tf_version: ${{ inputs.tf_version }}
           enable_tflint: ${{ inputs.enable_tflint }}
@@ -222,7 +229,7 @@ jobs:
             });
 
       - name: Render Summary
-        uses: ./actions/render-summary
+        uses: ./.github-templates/actions/render-summary
         if: always()
         with:
           title: "Terraform Plan Summary"
