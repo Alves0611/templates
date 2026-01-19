@@ -123,8 +123,8 @@ jobs:
       (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main') ||
       ((github.event_name == 'push' || github.event_name == 'workflow_call') &&
        github.ref == 'refs/heads/main' &&
-       (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')) ||
-      (github.event_name == 'workflow_dispatch' && (inputs.mode == 'pr' || (inputs.mode == 'apply' && inputs.run_apply == 'true')))
+       (inputs.plan_on_push_main || inputs.apply_on_push_main)) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.mode == 'pr' || (inputs.mode == 'apply' && inputs.run_apply)))
     needs: [validate-inputs, debug-context]
     uses: ./.github/workflows/terraform-plan.yml
     with:
@@ -152,8 +152,8 @@ jobs:
     if: |
       ((github.event_name == 'push' || github.event_name == 'workflow_call') &&
        github.ref == 'refs/heads/main' &&
-       inputs.apply_on_push_main == 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply' && inputs.run_apply == 'true')
+       inputs.apply_on_push_main) ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply' && inputs.run_apply)
     needs: terraform-plan
     uses: ./.github/workflows/terraform-apply.yml
     with:
