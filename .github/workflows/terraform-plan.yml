@@ -112,10 +112,6 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: terraform fmt -check -recursive
 
-      - name: Terraform Validate
-        working-directory: ${{ inputs.working_directory }}
-        run: terraform validate -no-color
-
       - name: Terraform Init
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -124,6 +120,10 @@ jobs:
           else
             terraform init -no-color
           fi
+
+      - name: Terraform Validate
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform validate -no-color
 
       - name: Install Trivy
         if: inputs.enable_trivy == true
