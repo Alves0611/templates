@@ -98,7 +98,9 @@ jobs:
 
   handle-pull-request:
     name: Terraform Plan (PR)
-    if: github.event_name == 'pull_request'
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main')
     needs: validate-inputs
     uses: ./.github/workflows/terraform-plan.yml
     with:
@@ -124,7 +126,9 @@ jobs:
   approve-apply:
     name: Approve Apply (Gate)
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.apply_on_push_main == 'true') ||
+      ((github.event_name == 'push' || github.event_name == 'workflow_call') &&
+       github.ref == 'refs/heads/main' &&
+       inputs.apply_on_push_main == 'true') ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply')
     needs: validate-inputs
     runs-on: ubuntu-latest
@@ -153,7 +157,7 @@ jobs:
   terraform-plan-main:
     name: Terraform Plan (Main)
     if: |
-      github.event_name == 'push' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_call') &&
       github.ref == 'refs/heads/main' &&
       (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')
     needs: [validate-inputs, approve-apply]
@@ -180,7 +184,7 @@ jobs:
   terraform-apply-main:
     name: Terraform Apply (Main)
     if: |
-      github.event_name == 'push' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_call') &&
       github.ref == 'refs/heads/main' &&
       inputs.apply_on_push_main == 'true'
     needs: terraform-plan-main
