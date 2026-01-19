@@ -138,17 +138,25 @@ jobs:
         run: |
           trivy config --severity CRITICAL,HIGH --exit-code 1 --format json --output trivy-results.json . || true
           if [ -f "trivy-results.json" ]; then
-            CRITICAL=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
-            HIGH=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+            CRITICAL=$(jq '[.[]?.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-results.json 2>/dev/null || jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH=$(jq '[.[]?.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")] | length' trivy-results.json 2>/dev/null || jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
             echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
             echo "high=$HIGH" >> $GITHUB_OUTPUT
-            echo "total=$((CRITICAL + HIGH))" >> $GITHUB_OUTPUT
+            TOTAL=$((CRITICAL + HIGH))
+            echo "total=$TOTAL" >> $GITHUB_OUTPUT
           else
             echo "critical=0" >> $GITHUB_OUTPUT
             echo "high=0" >> $GITHUB_OUTPUT
             echo "total=0" >> $GITHUB_OUTPUT
           fi
         continue-on-error: true
+
+      - name: Set Trivy Defaults
+        if: inputs.enable_trivy != true
+        run: |
+          echo "critical=0" >> $GITHUB_OUTPUT
+          echo "high=0" >> $GITHUB_OUTPUT
+          echo "total=0" >> $GITHUB_OUTPUT
 
       - name: Install Checkov
         if: inputs.enable_checkov == true
@@ -162,8 +170,8 @@ jobs:
         run: |
           checkov -d . --framework terraform --output json --output-file-path checkov-results.json || true
           if [ -f "checkov-results.json" ]; then
-            FAILED=$(jq '.summary.failed' checkov-results.json 2>/dev/null || echo "0")
-            PASSED=$(jq '.summary.passed' checkov-results.json 2>/dev/null || echo "0")
+            FAILED=$(jq -r '.summary.failed // 0' checkov-results.json 2>/dev/null || echo "0")
+            PASSED=$(jq -r '.summary.passed // 0' checkov-results.json 2>/dev/null || echo "0")
             echo "failed=$FAILED" >> $GITHUB_OUTPUT
             echo "passed=$PASSED" >> $GITHUB_OUTPUT
           else
@@ -171,6 +179,12 @@ jobs:
             echo "passed=0" >> $GITHUB_OUTPUT
           fi
         continue-on-error: true
+
+      - name: Set Checkov Defaults
+        if: inputs.enable_checkov != true
+        run: |
+          echo "failed=0" >> $GITHUB_OUTPUT
+          echo "passed=0" >> $GITHUB_OUTPUT
 
       - name: Run TFSec
         if: inputs.enable_tfsec == true
@@ -214,14 +228,28 @@ jobs:
         run: |
           infracost breakdown --terraform-plan-file ${{ inputs.artifact_name }} --format json --out-file infracost.json || true
           if [ -f "infracost.json" ]; then
-            TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // "0"' infracost.json 2>/dev/null || echo "0")
-            echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
-            echo "found=true" >> $GITHUB_OUTPUT
+            TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // empty' infracost.json 2>/dev/null)
+            if [ -z "$TOTAL_COST" ] || [ "$TOTAL_COST" = "null" ]; then
+              TOTAL_COST=$(jq -r '.totalMonthlyCost // empty' infracost.json 2>/dev/null)
+            fi
+            if [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "null" ] && [ "$TOTAL_COST" != "0" ]; then
+              echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
+              echo "found=true" >> $GITHUB_OUTPUT
+            else
+              echo "found=false" >> $GITHUB_OUTPUT
+              echo "cost=0" >> $GITHUB_OUTPUT
+            fi
           else
             echo "found=false" >> $GITHUB_OUTPUT
             echo "cost=0" >> $GITHUB_OUTPUT
           fi
         continue-on-error: true
+
+      - name: Set Infracost Defaults
+        if: inputs.enable_infracost != true
+        run: |
+          echo "found=false" >> $GITHUB_OUTPUT
+          echo "cost=0" >> $GITHUB_OUTPUT
 
       - name: Upload Infracost Artifact
         if: inputs.enable_infracost == true
@@ -285,14 +313,14 @@ jobs:
             TRIVY_TEXT="⏭️ Disabled"
           fi
           echo "trivy_text=$TRIVY_TEXT" >> $GITHUB_OUTPUT
-          
+
           if [ "${{ inputs.enable_checkov }}" = "true" ]; then
             CHECKOV_TEXT="✅ ${{ steps.checkov.outputs.passed }} passed, ${{ steps.checkov.outputs.failed }} failed"
           else
             CHECKOV_TEXT="⏭️ Disabled"
           fi
           echo "checkov_text=$CHECKOV_TEXT" >> $GITHUB_OUTPUT
-          
+
           if [ "${{ inputs.enable_infracost }}" = "true" ]; then
             if [ "${{ steps.infracost.outputs.found }}" = "true" ]; then
               INFRACOST_TEXT="💰 ${{ steps.infracost.outputs.cost }}/month"
