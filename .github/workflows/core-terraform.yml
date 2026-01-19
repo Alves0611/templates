@@ -85,8 +85,8 @@ on:
         description: Actually run apply (only for mode=apply)
 
 jobs:
-  validate-inputs:
-    name: Validate Inputs
+  SetVars:
+    name: Set Variables
     runs-on: ubuntu-latest
     steps:
       - name: Validate apply configuration
