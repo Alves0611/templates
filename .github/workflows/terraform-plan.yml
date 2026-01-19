@@ -231,7 +231,8 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: |
           echo "Running Infracost breakdown..."
-          infracost breakdown --terraform-plan-file ${{ inputs.artifact_name }} --format json --out-file infracost.json || true
+          terraform show -json ${{ inputs.artifact_name }} > plan.json || true
+          infracost breakdown --path plan.json --format json --out-file infracost.json || true
           if [ -f "infracost.json" ]; then
             echo "Infracost JSON file found, parsing..."
             cat infracost.json | head -30
