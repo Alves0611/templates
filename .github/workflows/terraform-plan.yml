@@ -241,8 +241,16 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: |
           echo "Running Infracost breakdown..."
+          # Convert terraform plan to JSON format
           terraform show -json ${{ inputs.artifact_name }} > plan.json || true
-          infracost breakdown --path plan.json --format json --out-file infracost.json || true
+          if [ -f "plan.json" ]; then
+            echo "Plan JSON generated, running Infracost..."
+            infracost breakdown --path plan.json --format json --out-file infracost.json || true
+          else
+            echo "Failed to generate plan.json, trying direct path..."
+            # Fallback: try using the directory directly
+            infracost breakdown --path . --format json --out-file infracost.json || true
+          fi
           if [ -f "infracost.json" ]; then
             echo "Infracost JSON file found, parsing..."
             # Try different JSON structures
