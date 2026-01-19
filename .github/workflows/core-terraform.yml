@@ -91,7 +91,9 @@ jobs:
     steps:
       - name: Validate apply configuration
         run: |
-          if [ "${{ inputs.apply_on_push_main }}" = "true" ] && [ "${{ inputs.plan_on_push_main }}" = "false" ]; then
+          APPLY_ON_PUSH="${{ inputs.apply_on_push_main }}"
+          PLAN_ON_PUSH="${{ inputs.plan_on_push_main }}"
+          if [ "$APPLY_ON_PUSH" = "true" ] && [ "$PLAN_ON_PUSH" = "false" ]; then
             echo "::error::apply_on_push_main=true requires plan_on_push_main=true. Cannot apply without running plan first."
             exit 1
           fi
