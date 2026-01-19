@@ -544,6 +544,36 @@ Currently, the pipeline is optimized for AWS with OIDC. For other clouds, it wou
 
 The pipeline uses cache based on the hash of `.terraform.lock.hcl`. This speeds up `terraform init` in subsequent runs.
 
+### Workflow not found error
+
+If you see `workflow was not found`, check:
+
+1. **Repository visibility**: If the pipeline repository is private, ensure:
+   - The consuming repository has access (same organization or explicit access)
+   - Or make the pipeline repository public
+
+2. **Branch/Tag exists**: Verify the branch or tag exists:
+   ```bash
+   # Check if branch exists
+   git ls-remote --heads origin main
+   
+   # Check if tag exists
+   git ls-remote --tags origin v1
+   ```
+
+3. **Workflow file exists**: Ensure `.github/workflows/core-terraform.yml` exists in the specified branch/tag
+
+4. **Use a tag instead of branch**: For stability, create and use a tag:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+   Then use: `uses: Alves0611/templates/.github/workflows/core-terraform.yml@v1.0.0`
+
+5. **Check repository name**: Verify the repository path is correct:
+   - Format: `OWNER/REPO/.github/workflows/FILE.yml@REF`
+   - Example: `Alves0611/templates/.github/workflows/core-terraform.yml@main`
+
 ## 📝 License
 
 This repository is provided as-is. Adjust as needed for your requirements.
