@@ -152,7 +152,7 @@ jobs:
         if: inputs.enable_checkov == true
         working-directory: ${{ inputs.working_directory }}
         run: |
-          checkov -d . --framework terraform --soft-fail false
+          checkov -d . --framework terraform
         continue-on-error: false
 
       - name: Run TFSec
