@@ -93,10 +93,28 @@ jobs:
         run: |
           APPLY_ON_PUSH="${{ inputs.apply_on_push_main }}"
           PLAN_ON_PUSH="${{ inputs.plan_on_push_main }}"
+          echo "APPLY_ON_PUSH=$APPLY_ON_PUSH"
+          echo "PLAN_ON_PUSH=$PLAN_ON_PUSH"
           if [ "$APPLY_ON_PUSH" = "true" ] && [ "$PLAN_ON_PUSH" = "false" ]; then
             echo "::error::apply_on_push_main=true requires plan_on_push_main=true. Cannot apply without running plan first."
             exit 1
           fi
+          echo "Validation passed"
+
+  debug-context:
+    name: Debug Context
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: always()
+    steps:
+      - name: Show context
+        run: |
+          echo "event_name: ${{ github.event_name }}"
+          echo "ref: ${{ github.ref }}"
+          echo "plan_on_push_main: ${{ inputs.plan_on_push_main }}"
+          echo "apply_on_push_main: ${{ inputs.apply_on_push_main }}"
+          echo "mode: ${{ inputs.mode }}"
+          echo "run_apply: ${{ inputs.run_apply }}"
 
   terraform-plan:
     name: Terraform Plan
@@ -107,7 +125,7 @@ jobs:
        github.ref == 'refs/heads/main' &&
        (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')) ||
       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'pr' || (inputs.mode == 'apply' && inputs.run_apply == 'true')))
-    needs: validate-inputs
+    needs: [validate-inputs, debug-context]
     uses: ./.github/workflows/terraform-plan.yml
     with:
       tf_version: ${{ inputs.tf_version }}
