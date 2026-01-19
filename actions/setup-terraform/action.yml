@@ -40,12 +40,10 @@ runs:
       shell: bash
       run: |
         curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-        sudo mv tflint /usr/local/bin/
 
     - name: Install TFSec
       if: inputs.enable_tfsec == 'true'
       shell: bash
       run: |
         curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
-        sudo mv tfsec /usr/local/bin/
 
