@@ -237,23 +237,65 @@ jobs:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
         continue-on-error: true
 
-      - name: Generate Infracost Report
+      - name: Checkout base branch for Infracost
+        if: |
+          inputs.enable_infracost == true &&
+          (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref || 'main' }}
+          path: /tmp/base
+
+      - name: Generate Infracost baseline
+        id: infracost-base
+        if: |
+          inputs.enable_infracost == true &&
+          (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
+        working-directory: /tmp/base/${{ inputs.working_directory }}
+        run: |
+          if [ -d "/tmp/base/${{ inputs.working_directory }}" ]; then
+            echo "Generating baseline from base branch..."
+            terraform init -no-color || true
+            terraform plan -out=base.tfplan -no-color || true
+            if [ -f "base.tfplan" ]; then
+              terraform show -json base.tfplan > /tmp/infracost-base.json || true
+              infracost breakdown --path /tmp/infracost-base.json --format json --out-file /tmp/infracost-base.json || true
+            else
+              infracost breakdown --path . --format json --out-file /tmp/infracost-base.json || true
+            fi
+          else
+            echo "Base directory not found, creating empty baseline"
+            echo '{"projects":[]}' > /tmp/infracost-base.json
+          fi
+        continue-on-error: true
+
+      - name: Generate Infracost diff
         id: infracost
         if: |
           inputs.enable_infracost == true &&
           (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
         working-directory: ${{ inputs.working_directory }}
         run: |
-          echo "Running Infracost breakdown..."
+          echo "Running Infracost diff..."
           # Convert terraform plan to JSON format
           terraform show -json ${{ inputs.artifact_name }} > plan.json || true
           if [ -f "plan.json" ]; then
-            echo "Plan JSON generated, running Infracost..."
-            infracost breakdown --path plan.json --format json --out-file infracost.json || true
+            echo "Plan JSON generated, running Infracost breakdown..."
+            infracost breakdown --path plan.json --format json --out-file /tmp/infracost-current.json || true
           else
             echo "Failed to generate plan.json, trying direct path..."
-            # Fallback: try using the directory directly
-            infracost breakdown --path . --format json --out-file infracost.json || true
+            infracost breakdown --path . --format json --out-file /tmp/infracost-current.json || true
+          fi
+          
+          # Generate diff
+          if [ -f "/tmp/infracost-current.json" ] && [ -f "/tmp/infracost-base.json" ]; then
+            echo "Generating Infracost diff..."
+            infracost diff --path /tmp/infracost-current.json --compare-to /tmp/infracost-base.json --format json --out-file infracost.json || true
+          else
+            echo "Using current breakdown as diff..."
+            if [ -f "/tmp/infracost-current.json" ]; then
+              cp /tmp/infracost-current.json infracost.json || true
+            fi
           fi
           if [ -f "infracost.json" ]; then
             echo "Infracost JSON file found, parsing..."
