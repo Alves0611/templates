@@ -125,7 +125,7 @@ jobs:
        github.ref == 'refs/heads/main' &&
        (inputs.plan_on_push_main || inputs.apply_on_push_main)) ||
       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'pr' || (inputs.mode == 'apply' && inputs.run_apply)))
-    needs: [validate-inputs, debug-context]
+    needs: [SetVars, debug-context]
     uses: ./.github/workflows/terraform-plan.yml
     with:
       tf_version: ${{ inputs.tf_version }}
