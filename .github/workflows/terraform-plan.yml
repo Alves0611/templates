@@ -1,0 +1,239 @@
+name: Terraform Plan
+
+on:
+  workflow_call:
+    inputs:
+      tf_version:
+        required: false
+        type: string
+        default: "1.7.5"
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      aws_region:
+        required: true
+        type: string
+      backend_config_file:
+        required: false
+        type: string
+        default: ""
+      enable_trivy:
+        required: false
+        type: boolean
+        default: true
+      enable_checkov:
+        required: false
+        type: boolean
+        default: true
+      enable_tfsec:
+        required: false
+        type: boolean
+        default: false
+      enable_tflint:
+        required: false
+        type: boolean
+        default: true
+      enable_infracost:
+        required: false
+        type: boolean
+        default: true
+      comment_plan_on_pr:
+        required: false
+        type: boolean
+        default: true
+      artifact_name:
+        required: false
+        type: string
+        default: "tfplan"
+    secrets:
+      AWS_ROLE_TO_ASSUME:
+        required: true
+        description: ARN of the OIDC role to assume
+      INFRACOST_API_KEY:
+        required: false
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Setup Terraform
+        uses: ./actions/setup-terraform
+        with:
+          tf_version: ${{ inputs.tf_version }}
+          enable_tflint: ${{ inputs.enable_tflint }}
+          enable_tfsec: ${{ inputs.enable_tfsec }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: terraform-plan-${{ github.run_id }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Terraform Format Check
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform validate -no-color
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          if [ -n "${{ inputs.backend_config_file }}" ]; then
+            terraform init -backend-config="${{ inputs.backend_config_file }}" -no-color
+          else
+            terraform init -no-color
+          fi
+
+      - name: Install Trivy
+        if: inputs.enable_trivy == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Run Trivy
+        if: inputs.enable_trivy == true
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          trivy config --severity CRITICAL,HIGH --exit-code 1 --format compact .
+        continue-on-error: false
+
+      - name: Install Checkov
+        if: inputs.enable_checkov == true
+        run: |
+          pip install checkov
+
+      - name: Run Checkov
+        if: inputs.enable_checkov == true
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          checkov -d . --framework terraform --soft-fail false
+        continue-on-error: false
+
+      - name: Run TFSec
+        if: inputs.enable_tfsec == true
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          tfsec . --minimum-severity HIGH --format compact
+        continue-on-error: false
+
+      - name: Run TFLint
+        if: inputs.enable_tflint == true
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          tflint --init
+          tflint -f compact
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform plan -out=${{ inputs.artifact_name }} -no-color
+          echo "plan_exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.working_directory }}/${{ inputs.artifact_name }}
+          retention-days: 5
+
+      - name: Setup Infracost
+        if: inputs.enable_infracost == true
+        uses: infracost/actions/setup@v2
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+        continue-on-error: true
+
+      - name: Generate Infracost Report
+        if: inputs.enable_infracost == true
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          infracost breakdown --terraform-plan-file ${{ inputs.artifact_name }} --format json --out-file infracost.json || true
+        continue-on-error: true
+
+      - name: Upload Infracost Artifact
+        if: inputs.enable_infracost == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost.json
+          path: ${{ inputs.working_directory }}/infracost.json
+          retention-days: 5
+        continue-on-error: true
+
+      - name: Comment Infracost on PR
+        if: |
+          inputs.enable_infracost == true &&
+          inputs.comment_plan_on_pr == true &&
+          github.event_name == 'pull_request'
+        uses: infracost/actions/comment@v1
+        with:
+          path: ${{ inputs.working_directory }}/infracost.json
+          behavior: update
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment Plan Summary on PR
+        if: |
+          inputs.comment_plan_on_pr == true &&
+          github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const planFile = path.join('${{ inputs.working_directory }}', '${{ inputs.artifact_name }}');
+
+            let comment = '## 📋 Terraform Plan Summary\n\n';
+            comment += `✅ Plan completed successfully\n\n`;
+            comment += `📦 Plan artifact: \`${{ inputs.artifact_name }}\`\n\n`;
+            comment += `🔗 Download the plan artifact from the workflow run artifacts.\n\n`;
+
+            if ('${{ inputs.enable_infracost }}' === 'true') {
+              comment += `💰 Cost estimation: See Infracost comment below\n\n`;
+            }
+
+            comment += `---\n*Generated by terraform-pipeline*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Render Summary
+        uses: ./actions/render-summary
+        if: always()
+        with:
+          title: "Terraform Plan Summary"
+          lines: |
+            - **Format Check**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
+            - **Validate**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
+            - **Trivy**: ${{ inputs.enable_trivy && '✅ Enabled' || '⏭️ Disabled' }}
+            - **Checkov**: ${{ inputs.enable_checkov && '✅ Enabled' || '⏭️ Disabled' }}
+            - **TFSec**: ${{ inputs.enable_tfsec && '✅ Enabled' || '⏭️ Disabled' }}
+            - **TFLint**: ${{ inputs.enable_tflint && '✅ Enabled' || '⏭️ Disabled' }}
+            - **Plan**: ${{ steps.plan.outcome == 'success' && '✅ Generated' || '❌ Failed' }}
+            - **Plan Artifact**: `${{ inputs.artifact_name }}`
+            - **Infracost**: ${{ inputs.enable_infracost && '✅ Enabled' || '⏭️ Disabled' }}
+            - **PR Comment**: ${{ inputs.comment_plan_on_pr && github.event_name == 'pull_request' && '✅ Enabled' || '⏭️ Disabled' }}
