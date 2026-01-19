@@ -115,7 +115,7 @@ jobs:
           title: "Terraform Apply Summary"
           lines: |
             - **Status**: ${{ job.status == 'success' && '✅ Apply completed successfully' || '❌ Apply failed' }}
-            - **Plan Used**: `${{ inputs.artifact_name }}`
-            - **Working Directory**: `${{ inputs.working_directory }}`
-            - **AWS Region**: `${{ inputs.aws_region }}`
-            - **Estimated Monthly Cost**: ${{ steps.infracost.outputs.cost_text }}
+            - **Plan Used**: `${{ inputs.artifact_name || 'tfplan' }}`
+            - **Working Directory**: `${{ inputs.working_directory || '.' }}`
+            - **AWS Region**: `${{ inputs.aws_region || 'N/A' }}`
+            - **Estimated Monthly Cost**: ${{ steps.infracost.outputs.cost_text || '⏭️ Not available' }}
