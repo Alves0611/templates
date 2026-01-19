@@ -1,0 +1,28 @@
+name: 'Render Step Summary'
+description: 'Composite action to render a beautiful step summary'
+
+inputs:
+  title:
+    description: 'Title of the summary section'
+    required: true
+  lines:
+    description: 'Multiline string with bullet points (one per line, markdown supported)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Render Summary
+      shell: bash
+      run: |
+        {
+          echo "## ${{ inputs.title }}"
+          echo ""
+          echo "${{ inputs.lines }}" | while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              echo "$line"
+            fi
+          done
+          echo ""
+        } >> $GITHUB_STEP_SUMMARY
+
