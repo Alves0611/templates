@@ -229,7 +229,9 @@ jobs:
           retention-days: 5
 
       - name: Setup Infracost
-        if: inputs.enable_infracost == true
+        if: |
+          inputs.enable_infracost == true &&
+          (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
         uses: infracost/actions/setup@v3
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
@@ -237,7 +239,9 @@ jobs:
 
       - name: Generate Infracost Report
         id: infracost
-        if: inputs.enable_infracost == true
+        if: |
+          inputs.enable_infracost == true &&
+          (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
         working-directory: ${{ inputs.working_directory }}
         run: |
           echo "Running Infracost breakdown..."
@@ -295,7 +299,7 @@ jobs:
         if: |
           inputs.enable_infracost == true &&
           inputs.comment_plan_on_pr == true &&
-          github.event_name == 'pull_request'
+          (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main'))
         uses: infracost/actions/comment@v1
         with:
           path: ${{ inputs.working_directory }}/infracost.json

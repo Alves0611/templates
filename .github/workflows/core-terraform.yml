@@ -132,7 +132,7 @@ jobs:
       working_directory: ${{ inputs.working_directory }}
       aws_region: ${{ inputs.aws_region }}
       backend_config_file: ${{ inputs.backend_config_file }}
-      enable_infracost: ${{ inputs.enable_infracost }}
+      enable_infracost: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'pr')) && inputs.enable_infracost }}
       enable_trivy: ${{ inputs.enable_trivy }}
       enable_checkov: ${{ inputs.enable_checkov }}
       enable_tflint: ${{ inputs.enable_tflint }}
