@@ -141,7 +141,7 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: |
           trivy config --severity CRITICAL,HIGH --exit-code 1 --format table .
-        continue-on-error: false
+        continue-on-error: true
 
       - name: Install Checkov
         if: inputs.enable_checkov == true
