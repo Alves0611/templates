@@ -175,6 +175,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      pull-requests: write
 
   terraform-apply-main:
     name: Terraform Apply (Main)
@@ -221,6 +222,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      pull-requests: write
 
   terraform-apply-dispatch:
     name: Terraform Apply (Manual)
@@ -267,3 +269,4 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      pull-requests: write
