@@ -170,11 +170,15 @@ jobs:
         run: |
           checkov -d . --framework terraform --output json --output-file-path checkov-results.json || true
           if [ -f "checkov-results.json" ]; then
+            echo "Checkov JSON file found, parsing..."
+            cat checkov-results.json | head -20
             FAILED=$(jq -r '.summary.failed // 0' checkov-results.json 2>/dev/null || echo "0")
             PASSED=$(jq -r '.summary.passed // 0' checkov-results.json 2>/dev/null || echo "0")
+            echo "Checkov results: passed=$PASSED, failed=$FAILED"
             echo "failed=$FAILED" >> $GITHUB_OUTPUT
             echo "passed=$PASSED" >> $GITHUB_OUTPUT
           else
+            echo "Checkov JSON file not found"
             echo "failed=0" >> $GITHUB_OUTPUT
             echo "passed=0" >> $GITHUB_OUTPUT
           fi
@@ -226,12 +230,16 @@ jobs:
         if: inputs.enable_infracost == true
         working-directory: ${{ inputs.working_directory }}
         run: |
+          echo "Running Infracost breakdown..."
           infracost breakdown --terraform-plan-file ${{ inputs.artifact_name }} --format json --out-file infracost.json || true
           if [ -f "infracost.json" ]; then
+            echo "Infracost JSON file found, parsing..."
+            cat infracost.json | head -30
             TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // empty' infracost.json 2>/dev/null)
             if [ -z "$TOTAL_COST" ] || [ "$TOTAL_COST" = "null" ]; then
               TOTAL_COST=$(jq -r '.totalMonthlyCost // empty' infracost.json 2>/dev/null)
             fi
+            echo "Infracost cost extracted: $TOTAL_COST"
             if [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "null" ] && [ "$TOTAL_COST" != "0" ]; then
               echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
               echo "found=true" >> $GITHUB_OUTPUT
@@ -240,6 +248,7 @@ jobs:
               echo "cost=0" >> $GITHUB_OUTPUT
             fi
           else
+            echo "Infracost JSON file not found"
             echo "found=false" >> $GITHUB_OUTPUT
             echo "cost=0" >> $GITHUB_OUTPUT
           fi
