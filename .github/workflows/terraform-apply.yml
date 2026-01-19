@@ -48,7 +48,6 @@ jobs:
           path: .github-templates
           token: ${{ secrets.GITHUB_TOKEN }}
 
-
       - name: Setup Terraform
         uses: ./.github-templates/actions/setup-terraform
         with:
@@ -80,6 +79,28 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: terraform apply -auto-approve ${{ inputs.artifact_name }}
 
+      - name: Download Infracost Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: infracost.json
+          path: ${{ inputs.working_directory }}
+        continue-on-error: true
+
+      - name: Extract Infracost Cost
+        id: infracost
+        working-directory: ${{ inputs.working_directory }}
+        if: always()
+        run: |
+          if [ -f "infracost.json" ]; then
+            TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // "N/A"' infracost.json 2>/dev/null || echo "N/A")
+            echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "cost=N/A" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
       - name: Render Summary
         uses: ./.github-templates/actions/render-summary
         if: always()
@@ -90,3 +111,4 @@ jobs:
             - **Plan Used**: `${{ inputs.artifact_name }}`
             - **Working Directory**: `${{ inputs.working_directory }}`
             - **AWS Region**: `${{ inputs.aws_region }}`
+            - **Estimated Monthly Cost**: ${{ steps.infracost.outputs.found == 'true' && format('💰 ${0}', steps.infracost.outputs.cost) || '⏭️ Not available' }}

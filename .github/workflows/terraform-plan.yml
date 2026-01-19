@@ -72,7 +72,6 @@ jobs:
           path: .github-templates
           token: ${{ secrets.GITHUB_TOKEN }}
 
-
       - name: Setup Terraform
         uses: ./.github-templates/actions/setup-terraform
         with:
@@ -133,10 +132,22 @@ jobs:
           version: "latest"
 
       - name: Run Trivy
+        id: trivy
         if: inputs.enable_trivy == true
         working-directory: ${{ inputs.working_directory }}
         run: |
-          trivy config --severity CRITICAL,HIGH --exit-code 1 --format table .
+          trivy config --severity CRITICAL,HIGH --exit-code 1 --format json --output trivy-results.json . || true
+          if [ -f "trivy-results.json" ]; then
+            CRITICAL=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "total=$((CRITICAL + HIGH))" >> $GITHUB_OUTPUT
+          else
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+          fi
         continue-on-error: true
 
       - name: Install Checkov
@@ -145,10 +156,20 @@ jobs:
           pip install checkov
 
       - name: Run Checkov
+        id: checkov
         if: inputs.enable_checkov == true
         working-directory: ${{ inputs.working_directory }}
         run: |
-          checkov -d . --framework terraform
+          checkov -d . --framework terraform --output json --output-file-path checkov-results.json || true
+          if [ -f "checkov-results.json" ]; then
+            FAILED=$(jq '.summary.failed' checkov-results.json 2>/dev/null || echo "0")
+            PASSED=$(jq '.summary.passed' checkov-results.json 2>/dev/null || echo "0")
+            echo "failed=$FAILED" >> $GITHUB_OUTPUT
+            echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          else
+            echo "failed=0" >> $GITHUB_OUTPUT
+            echo "passed=0" >> $GITHUB_OUTPUT
+          fi
         continue-on-error: true
 
       - name: Run TFSec
@@ -187,10 +208,19 @@ jobs:
         continue-on-error: true
 
       - name: Generate Infracost Report
+        id: infracost
         if: inputs.enable_infracost == true
         working-directory: ${{ inputs.working_directory }}
         run: |
           infracost breakdown --terraform-plan-file ${{ inputs.artifact_name }} --format json --out-file infracost.json || true
+          if [ -f "infracost.json" ]; then
+            TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // "0"' infracost.json 2>/dev/null || echo "0")
+            echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "cost=0" >> $GITHUB_OUTPUT
+          fi
         continue-on-error: true
 
       - name: Upload Infracost Artifact
@@ -250,11 +280,11 @@ jobs:
           lines: |
             - **Format Check**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
             - **Validate**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
-            - **Trivy**: ${{ inputs.enable_trivy && '✅ Enabled' || '⏭️ Disabled' }}
-            - **Checkov**: ${{ inputs.enable_checkov && '✅ Enabled' || '⏭️ Disabled' }}
+            - **Trivy**: ${{ inputs.enable_trivy && format('✅ {0} issues found (CRITICAL: {1}, HIGH: {2})', steps.trivy.outputs.total, steps.trivy.outputs.critical, steps.trivy.outputs.high) || '⏭️ Disabled' }}
+            - **Checkov**: ${{ inputs.enable_checkov && format('✅ {0} passed, {1} failed', steps.checkov.outputs.passed, steps.checkov.outputs.failed) || '⏭️ Disabled' }}
             - **TFSec**: ${{ inputs.enable_tfsec && '✅ Enabled' || '⏭️ Disabled' }}
             - **TFLint**: ${{ inputs.enable_tflint && '✅ Enabled' || '⏭️ Disabled' }}
             - **Plan**: ${{ steps.plan.outcome == 'success' && '✅ Generated' || '❌ Failed' }}
             - **Plan Artifact**: `${{ inputs.artifact_name }}`
-            - **Infracost**: ${{ inputs.enable_infracost && '✅ Enabled' || '⏭️ Disabled' }}
+            - **Infracost**: ${{ inputs.enable_infracost && (steps.infracost.outputs.found == 'true' && format('💰 ${0}/month', steps.infracost.outputs.cost) || '✅ Enabled (no cost data)') || '⏭️ Disabled' }}
             - **PR Comment**: ${{ inputs.comment_plan_on_pr && github.event_name == 'pull_request' && '✅ Enabled' || '⏭️ Disabled' }}
