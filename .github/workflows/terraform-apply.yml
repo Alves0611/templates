@@ -95,10 +95,17 @@ jobs:
             TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // "N/A"' infracost.json 2>/dev/null || echo "N/A")
             echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
             echo "found=true" >> $GITHUB_OUTPUT
+            if [ "$TOTAL_COST" != "N/A" ] && [ "$TOTAL_COST" != "0" ]; then
+              COST_TEXT="💰 \$$TOTAL_COST/month"
+            else
+              COST_TEXT="⏭️ Not available"
+            fi
           else
             echo "found=false" >> $GITHUB_OUTPUT
             echo "cost=N/A" >> $GITHUB_OUTPUT
+            COST_TEXT="⏭️ Not available"
           fi
+          echo "cost_text=$COST_TEXT" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Render Summary
@@ -111,4 +118,4 @@ jobs:
             - **Plan Used**: `${{ inputs.artifact_name }}`
             - **Working Directory**: `${{ inputs.working_directory }}`
             - **AWS Region**: `${{ inputs.aws_region }}`
-            - **Estimated Monthly Cost**: ${{ steps.infracost.outputs.found == 'true' && format('💰 ${0}', steps.infracost.outputs.cost) || '⏭️ Not available' }}
+            - **Estimated Monthly Cost**: ${{ steps.infracost.outputs.cost_text }}

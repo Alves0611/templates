@@ -272,6 +272,38 @@ jobs:
               body: comment
             });
 
+      - name: Format Summary Data
+        id: summary
+        if: always()
+        run: |
+          if [ "${{ inputs.enable_trivy }}" = "true" ]; then
+            TRIVY_TEXT="✅ ${{ steps.trivy.outputs.total }} issues (CRITICAL: ${{ steps.trivy.outputs.critical }}, HIGH: ${{ steps.trivy.outputs.high }})"
+            if [ "${{ steps.trivy.outputs.total }}" = "0" ]; then
+              TRIVY_TEXT="✅ No issues found"
+            fi
+          else
+            TRIVY_TEXT="⏭️ Disabled"
+          fi
+          echo "trivy_text=$TRIVY_TEXT" >> $GITHUB_OUTPUT
+          
+          if [ "${{ inputs.enable_checkov }}" = "true" ]; then
+            CHECKOV_TEXT="✅ ${{ steps.checkov.outputs.passed }} passed, ${{ steps.checkov.outputs.failed }} failed"
+          else
+            CHECKOV_TEXT="⏭️ Disabled"
+          fi
+          echo "checkov_text=$CHECKOV_TEXT" >> $GITHUB_OUTPUT
+          
+          if [ "${{ inputs.enable_infracost }}" = "true" ]; then
+            if [ "${{ steps.infracost.outputs.found }}" = "true" ]; then
+              INFRACOST_TEXT="💰 ${{ steps.infracost.outputs.cost }}/month"
+            else
+              INFRACOST_TEXT="✅ Enabled (no cost data)"
+            fi
+          else
+            INFRACOST_TEXT="⏭️ Disabled"
+          fi
+          echo "infracost_text=$INFRACOST_TEXT" >> $GITHUB_OUTPUT
+
       - name: Render Summary
         uses: ./.github-templates/actions/render-summary
         if: always()
@@ -280,11 +312,11 @@ jobs:
           lines: |
             - **Format Check**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
             - **Validate**: ${{ steps.plan.outcome == 'success' && '✅ Passed' || '❌ Failed' }}
-            - **Trivy**: ${{ inputs.enable_trivy && format('✅ {0} issues found (CRITICAL: {1}, HIGH: {2})', steps.trivy.outputs.total, steps.trivy.outputs.critical, steps.trivy.outputs.high) || '⏭️ Disabled' }}
-            - **Checkov**: ${{ inputs.enable_checkov && format('✅ {0} passed, {1} failed', steps.checkov.outputs.passed, steps.checkov.outputs.failed) || '⏭️ Disabled' }}
+            - **Trivy**: ${{ steps.summary.outputs.trivy_text }}
+            - **Checkov**: ${{ steps.summary.outputs.checkov_text }}
             - **TFSec**: ${{ inputs.enable_tfsec && '✅ Enabled' || '⏭️ Disabled' }}
             - **TFLint**: ${{ inputs.enable_tflint && '✅ Enabled' || '⏭️ Disabled' }}
             - **Plan**: ${{ steps.plan.outcome == 'success' && '✅ Generated' || '❌ Failed' }}
             - **Plan Artifact**: `${{ inputs.artifact_name }}`
-            - **Infracost**: ${{ inputs.enable_infracost && (steps.infracost.outputs.found == 'true' && format('💰 ${0}/month', steps.infracost.outputs.cost) || '✅ Enabled (no cost data)') || '⏭️ Disabled' }}
+            - **Infracost**: ${{ steps.summary.outputs.infracost_text }}
             - **PR Comment**: ${{ inputs.comment_plan_on_pr && github.event_name == 'pull_request' && '✅ Enabled' || '⏭️ Disabled' }}
