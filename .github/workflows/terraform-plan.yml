@@ -130,15 +130,17 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: terraform validate -no-color
 
+      - name: Setup Trivy
+        if: inputs.enable_trivy == true
+        uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: "latest"
+
       - name: Run Trivy
         if: inputs.enable_trivy == true
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          scan-type: "config"
-          scan-ref: "${{ inputs.working_directory }}"
-          format: "table"
-          severity: "CRITICAL,HIGH"
-          exit-code: "1"
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          trivy config --severity CRITICAL,HIGH --exit-code 1 --format table .
         continue-on-error: false
 
       - name: Install Checkov
