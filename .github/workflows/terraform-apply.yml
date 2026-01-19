@@ -85,7 +85,7 @@ jobs:
         run: terraform apply -auto-approve ${{ inputs.artifact_name }}
 
       - name: Render Summary
-        uses: ./actions/render-summary
+        uses: ./.github-templates/actions/render-summary
         if: always()
         with:
           title: "Terraform Apply Summary"
