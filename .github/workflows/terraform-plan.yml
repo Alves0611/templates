@@ -91,6 +91,15 @@ jobs:
           role-session-name: terraform-plan-${{ github.run_id }}
           aws-region: ${{ inputs.aws_region }}
 
+      - name: Verify working directory exists
+        run: |
+          if [ ! -d "${{ inputs.working_directory }}" ]; then
+            echo "::error::Working directory '${{ inputs.working_directory }}' does not exist"
+            exit 1
+          fi
+          echo "Working directory: ${{ inputs.working_directory }}"
+          ls -la "${{ inputs.working_directory }}"
+
       - name: Terraform Format Check
         working-directory: ${{ inputs.working_directory }}
         run: terraform fmt -check -recursive
