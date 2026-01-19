@@ -115,11 +115,16 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ inputs.working_directory }}
         run: |
+          echo "Running terraform init..."
           if [ -n "${{ inputs.backend_config_file }}" ]; then
+            echo "Using backend config file: ${{ inputs.backend_config_file }}"
             terraform init -backend-config="${{ inputs.backend_config_file }}" -no-color
           else
+            echo "Running terraform init without backend config"
             terraform init -no-color
           fi
+          echo "Terraform init completed. Exit code: $?"
+          terraform version
 
       - name: Terraform Validate
         working-directory: ${{ inputs.working_directory }}
