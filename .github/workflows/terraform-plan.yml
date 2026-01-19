@@ -171,9 +171,19 @@ jobs:
           checkov -d . --framework terraform --output json --output-file-path checkov-results.json || true
           if [ -f "checkov-results.json" ]; then
             echo "Checkov JSON file found, parsing..."
-            cat checkov-results.json | head -20
-            FAILED=$(jq -r '.summary.failed // 0' checkov-results.json 2>/dev/null || echo "0")
-            PASSED=$(jq -r '.summary.passed // 0' checkov-results.json 2>/dev/null || echo "0")
+            # Try different JSON structures
+            FAILED=$(jq -r '.summary.failed // .summary.failed // 0' checkov-results.json 2>/dev/null || echo "0")
+            PASSED=$(jq -r '.summary.passed // .summary.passed // 0' checkov-results.json 2>/dev/null || echo "0")
+            # If still 0, try counting from check_results
+            if [ "$FAILED" = "0" ] && [ "$PASSED" = "0" ]; then
+              FAILED=$(jq '[.check_results[]?.check_result.failed] | length' checkov-results.json 2>/dev/null || echo "0")
+              PASSED=$(jq '[.check_results[]?.check_result.passed] | length' checkov-results.json 2>/dev/null || echo "0")
+            fi
+            # Count from results array
+            if [ "$FAILED" = "0" ] && [ "$PASSED" = "0" ]; then
+              FAILED=$(jq '[.results[]?.check_result | select(.result == "FAILED")] | length' checkov-results.json 2>/dev/null || echo "0")
+              PASSED=$(jq '[.results[]?.check_result | select(.result == "PASSED")] | length' checkov-results.json 2>/dev/null || echo "0")
+            fi
             echo "Checkov results: passed=$PASSED, failed=$FAILED"
             echo "failed=$FAILED" >> $GITHUB_OUTPUT
             echo "passed=$PASSED" >> $GITHUB_OUTPUT
@@ -235,13 +245,16 @@ jobs:
           infracost breakdown --path plan.json --format json --out-file infracost.json || true
           if [ -f "infracost.json" ]; then
             echo "Infracost JSON file found, parsing..."
-            cat infracost.json | head -30
+            # Try different JSON structures
             TOTAL_COST=$(jq -r '.projects[0].breakdown.totalMonthlyCost // empty' infracost.json 2>/dev/null)
             if [ -z "$TOTAL_COST" ] || [ "$TOTAL_COST" = "null" ]; then
               TOTAL_COST=$(jq -r '.totalMonthlyCost // empty' infracost.json 2>/dev/null)
             fi
+            if [ -z "$TOTAL_COST" ] || [ "$TOTAL_COST" = "null" ]; then
+              TOTAL_COST=$(jq -r '.projects[0].summary.totalMonthlyCost // empty' infracost.json 2>/dev/null)
+            fi
             echo "Infracost cost extracted: $TOTAL_COST"
-            if [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "null" ] && [ "$TOTAL_COST" != "0" ]; then
+            if [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "null" ] && [ "$TOTAL_COST" != "0" ] && [ "$TOTAL_COST" != "0.0" ]; then
               echo "cost=$TOTAL_COST" >> $GITHUB_OUTPUT
               echo "found=true" >> $GITHUB_OUTPUT
             else
