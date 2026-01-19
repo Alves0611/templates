@@ -1,0 +1,269 @@
+name: Core Terraform Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        required: true
+        type: string
+        description: AWS region to use
+      tf_version:
+        required: false
+        type: string
+        default: "1.7.5"
+        description: Terraform version to use
+      working_directory:
+        required: false
+        type: string
+        default: "."
+        description: Working directory for Terraform operations
+      backend_config_file:
+        required: false
+        type: string
+        default: ""
+        description: Optional backend config file path
+      enable_infracost:
+        required: false
+        type: boolean
+        default: true
+        description: Enable Infracost cost estimation
+      enable_trivy:
+        required: false
+        type: boolean
+        default: true
+        description: Enable Trivy security scanning
+      enable_checkov:
+        required: false
+        type: boolean
+        default: true
+        description: Enable Checkov security scanning
+      enable_tflint:
+        required: false
+        type: boolean
+        default: true
+        description: Enable TFLint
+      enable_tfsec:
+        required: false
+        type: boolean
+        default: false
+        description: Enable TFSec security scanning
+      plan_on_push_main:
+        required: false
+        type: boolean
+        default: true
+        description: Run plan on push to main branch
+      apply_on_push_main:
+        required: false
+        type: boolean
+        default: true
+        description: Run apply on push to main branch
+      comment_plan_on_pr:
+        required: false
+        type: boolean
+        default: true
+        description: Comment plan output on PR
+    secrets:
+      AWS_ASSUME_ROLE:
+        required: true
+        description: ARN of the OIDC role to assume for all operations
+      INFRACOST_API_KEY:
+        required: false
+        description: Infracost API key for cost estimation
+  workflow_dispatch:
+    inputs:
+      mode:
+        required: true
+        type: choice
+        options:
+          - pr
+          - apply
+        description: Pipeline mode (pr or apply)
+      run_apply:
+        required: false
+        type: boolean
+        default: false
+        description: Actually run apply (only for mode=apply)
+
+jobs:
+  validate-inputs:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate apply configuration
+        run: |
+          if [ "${{ inputs.apply_on_push_main }}" = "true" ] && [ "${{ inputs.plan_on_push_main }}" = "false" ]; then
+            echo "::error::apply_on_push_main=true requires plan_on_push_main=true. Cannot apply without running plan first."
+            exit 1
+          fi
+
+  handle-pull-request:
+    name: Terraform Plan (PR)
+    if: github.event_name == 'pull_request'
+    needs: validate-inputs
+    uses: ./.github/workflows/terraform-plan.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      enable_infracost: ${{ inputs.enable_infracost }}
+      enable_trivy: ${{ inputs.enable_trivy }}
+      enable_checkov: ${{ inputs.enable_checkov }}
+      enable_tflint: ${{ inputs.enable_tflint }}
+      enable_tfsec: ${{ inputs.enable_tfsec }}
+      comment_plan_on_pr: ${{ inputs.comment_plan_on_pr }}
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+  approve-apply:
+    name: Approve Apply (Gate)
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.apply_on_push_main == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply')
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    environment:
+      name: apply
+      url: https://github.com/${{ github.repository }}
+    steps:
+      - name: Validate workflow_dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.mode }}" != "apply" ]; then
+            echo "::error::mode must be 'apply' for apply workflow"
+            exit 1
+          fi
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Apply can only be run from main branch"
+            exit 1
+          fi
+          if [ "${{ inputs.run_apply }}" != "true" ]; then
+            echo "::error::run_apply must be true to proceed with apply"
+            exit 1
+          fi
+      - name: Apply approved
+        run: echo "Apply gate passed. Proceeding with terraform apply..."
+
+  terraform-plan-main:
+    name: Terraform Plan (Main)
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')
+    needs: [validate-inputs, approve-apply]
+    uses: ./.github/workflows/terraform-plan.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      enable_infracost: false
+      enable_trivy: ${{ inputs.enable_trivy }}
+      enable_checkov: ${{ inputs.enable_checkov }}
+      enable_tflint: ${{ inputs.enable_tflint }}
+      enable_tfsec: ${{ inputs.enable_tfsec }}
+      comment_plan_on_pr: false
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+    permissions:
+      id-token: write
+      contents: read
+
+  terraform-apply-main:
+    name: Terraform Apply (Main)
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.apply_on_push_main == 'true'
+    needs: terraform-plan-main
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+    permissions:
+      id-token: write
+      contents: read
+
+  terraform-plan-dispatch:
+    name: Terraform Plan (Manual)
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'apply' &&
+      inputs.run_apply == 'true'
+    needs: [validate-inputs, approve-apply]
+    uses: ./.github/workflows/terraform-plan.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      enable_infracost: false
+      enable_trivy: ${{ inputs.enable_trivy }}
+      enable_checkov: ${{ inputs.enable_checkov }}
+      enable_tflint: ${{ inputs.enable_tflint }}
+      enable_tfsec: ${{ inputs.enable_tfsec }}
+      comment_plan_on_pr: false
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+    permissions:
+      id-token: write
+      contents: read
+
+  terraform-apply-dispatch:
+    name: Terraform Apply (Manual)
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'apply' &&
+      inputs.run_apply == 'true'
+    needs: terraform-plan-dispatch
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+    permissions:
+      id-token: write
+      contents: read
+
+  handle-workflow-dispatch-pr:
+    name: Terraform Plan (Manual PR)
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'pr'
+    needs: validate-inputs
+    uses: ./.github/workflows/terraform-plan.yml
+    with:
+      tf_version: ${{ inputs.tf_version }}
+      working_directory: ${{ inputs.working_directory }}
+      aws_region: ${{ inputs.aws_region }}
+      backend_config_file: ${{ inputs.backend_config_file }}
+      enable_infracost: ${{ inputs.enable_infracost }}
+      enable_trivy: ${{ inputs.enable_trivy }}
+      enable_checkov: ${{ inputs.enable_checkov }}
+      enable_tflint: ${{ inputs.enable_tflint }}
+      enable_tfsec: ${{ inputs.enable_tfsec }}
+      comment_plan_on_pr: false
+      artifact_name: tfplan
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+    permissions:
+      id-token: write
+      contents: read
