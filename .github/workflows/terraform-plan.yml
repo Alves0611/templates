@@ -134,12 +134,12 @@ jobs:
         if: inputs.enable_trivy == true
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'config'
-          scan-ref: '${{ inputs.working_directory }}'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          scan-type: "config"
+          scan-ref: "${{ inputs.working_directory }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
         continue-on-error: false
 
       - name: Install Checkov
