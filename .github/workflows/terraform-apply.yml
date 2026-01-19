@@ -1,0 +1,86 @@
+name: Terraform Apply
+
+on:
+  workflow_call:
+    inputs:
+      tf_version:
+        required: false
+        type: string
+        default: "1.7.5"
+      working_directory:
+        required: false
+        type: string
+        default: "."
+      aws_region:
+        required: true
+        type: string
+      backend_config_file:
+        required: false
+        type: string
+        default: ""
+      artifact_name:
+        required: false
+        type: string
+        default: "tfplan"
+    secrets:
+      AWS_ROLE_TO_ASSUME:
+        required: true
+        description: ARN of the OIDC role to assume
+
+jobs:
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Setup Terraform
+        uses: ./actions/setup-terraform
+        with:
+          tf_version: ${{ inputs.tf_version }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: terraform-apply-${{ github.run_id }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          if [ -n "${{ inputs.backend_config_file }}" ]; then
+            terraform init -backend-config="${{ inputs.backend_config_file }}" -no-color
+          else
+            terraform init -no-color
+          fi
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.working_directory }}
+
+      - name: Terraform Apply
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform apply -auto-approve ${{ inputs.artifact_name }}
+
+      - name: Render Summary
+        uses: ./actions/render-summary
+        if: always()
+        with:
+          title: "Terraform Apply Summary"
+          lines: |
+            - **Status**: ${{ job.status == 'success' && '✅ Apply completed successfully' || '❌ Apply failed' }}
+            - **Plan Used**: `${{ inputs.artifact_name }}`
+            - **Working Directory**: `${{ inputs.working_directory }}`
+            - **AWS Region**: `${{ inputs.aws_region }}`
