@@ -33,9 +33,11 @@ The `core-terraform.yml` automatically orchestrates the correct flow based on th
 
 ## 🚀 How to Use
 
-### Basic Example
+### Step-by-Step Setup
 
-Create a `.github/workflows/iac.yml` file in your project repository:
+#### 1. Create the Workflow File
+
+In your project repository, create `.github/workflows/iac.yml` (or any name you prefer):
 
 ```yaml
 name: Infrastructure as Code
@@ -50,7 +52,7 @@ on:
 
 jobs:
   terraform:
-    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
     with:
       aws_region: us-east-1
       working_directory: terraform
@@ -66,6 +68,82 @@ jobs:
     secrets:
       AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
       INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+```
+
+**Important:** Replace `Alves0611/templates` with your organization/repository name where the pipeline is hosted. Use `@main` for latest changes or `@v1` for a specific version tag.
+
+#### 2. Configure GitHub Secrets
+
+Go to your repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+
+- **`AWS_ASSUME_ROLE`**: The ARN of your IAM role (e.g., `arn:aws:iam::123456789012:role/github-actions-terraform`)
+- **`INFRACOST_API_KEY`** (optional): Your Infracost API key for cost estimation
+
+#### 3. Configure AWS IAM Role
+
+Ensure your IAM role's trust policy allows your repository to assume it:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/YOUR_REPO:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### 4. Configure Approval Environment (Optional but Recommended)
+
+For apply operations, set up an approval gate:
+
+1. Go to **Settings** → **Environments**
+2. Click **New environment** → Name it `apply`
+3. Add **Required reviewers** (users or teams)
+4. Optionally restrict to specific branches
+
+#### 5. Test the Pipeline
+
+- **Pull Request**: Create a PR to trigger plan and security scans
+- **Push to main**: Will trigger plan and apply (with approval if configured)
+- **Manual**: Use workflow_dispatch in the Actions tab
+
+### Basic Example
+
+Here's a minimal working example:
+
+```yaml
+name: Infrastructure as Code
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
+    with:
+      aws_region: us-east-1
+      working_directory: terraform
+    secrets:
+      AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
 ```
 
 ### Multiple Terraform Directories
@@ -89,7 +167,7 @@ on:
 
 jobs:
   terraform-vpc:
-    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
     with:
       aws_region: us-east-1
       working_directory: terraform/00-vpc
@@ -99,7 +177,7 @@ jobs:
       AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
 
   terraform-eks:
-    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
     with:
       aws_region: us-east-1
       working_directory: terraform/01-eks-cluster
@@ -114,7 +192,7 @@ jobs:
 ```yaml
   terraform-eks:
     needs: terraform-vpc
-    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
     # ... rest of config
 ```
 
@@ -141,7 +219,7 @@ jobs:
           - terraform/00-vpc
           - terraform/01-eks-cluster
           - terraform/02-rds
-    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
     with:
       aws_region: us-east-1
       working_directory: ${{ matrix.directory }}
@@ -268,7 +346,9 @@ The pipeline is versioned using **Git tags**. Use semantic tags:
 
 **Usage example:**
 ```yaml
-uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
+# Or use a version tag:
+uses: Alves0611/templates/.github/workflows/core-terraform.yml@v1
 ```
 
 We recommend pinning the major version (`@v1`) to receive patches automatically, or pinning a specific version (`@v1.0.1`) for maximum stability.
@@ -408,12 +488,12 @@ If you have multiple Terraform directories (e.g., `terraform/00-vpc`, `terraform
    ```yaml
    jobs:
      terraform-vpc:
-       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
        with:
          working_directory: terraform/00-vpc
      terraform-eks:
        needs: terraform-vpc  # Run after VPC
-       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
        with:
          working_directory: terraform/01-eks-cluster
    ```
@@ -425,7 +505,7 @@ If you have multiple Terraform directories (e.g., `terraform/00-vpc`, `terraform
        strategy:
          matrix:
            directory: [terraform/00-vpc, terraform/01-eks-cluster]
-       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       uses: Alves0611/templates/.github/workflows/core-terraform.yml@main
        with:
          working_directory: ${{ matrix.directory }}
    ```
@@ -474,4 +554,4 @@ For improvements or fixes, open an issue or pull request in the repository.
 
 ---
 
-**Note:** Replace `ORG` with your organization's actual names and adjust ARNs and configurations according to your environment.
+**Note:** Replace `Alves0611/templates` with your organization/repository name where the pipeline is hosted. Use `@main` for latest changes or `@v1` (after creating a tag) for version pinning.
