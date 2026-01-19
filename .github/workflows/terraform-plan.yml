@@ -94,10 +94,18 @@ jobs:
       - name: Verify working directory exists
         run: |
           if [ ! -d "${{ inputs.working_directory }}" ]; then
-            echo "::error::Working directory '${{ inputs.working_directory }}' does not exist"
+            echo "::error::Working directory '${{ inputs.working_directory }}' does not exist in this repository."
+            echo "Available directories:"
+            ls -la
+            echo ""
+            echo "Please check your workflow configuration:"
+            echo "  - If Terraform files are in the root, use: working_directory: '.'"
+            echo "  - If Terraform files are in a subdirectory, use the correct path"
+            echo "  - Default value is '.' (current directory)"
             exit 1
           fi
           echo "Working directory: ${{ inputs.working_directory }}"
+          echo "Contents:"
           ls -la "${{ inputs.working_directory }}"
 
       - name: Terraform Format Check
