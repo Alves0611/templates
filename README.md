@@ -1,26 +1,26 @@
 # Terraform Pipeline
 
-Repositório centralizado de pipelines Terraform para GitHub Actions. Este repositório fornece workflows reutilizáveis e actions compostas para automatizar validação, planejamento e aplicação de infraestrutura como código com Terraform na AWS.
+Centralized Terraform pipeline repository for GitHub Actions. This repository provides reusable workflows and composite actions to automate validation, planning, and application of infrastructure as code with Terraform on AWS.
 
-## 🎯 Objetivo
+## 🎯 Objective
 
-Repositórios de projetos **NÃO devem copiar steps** de Terraform. Em vez disso, devem apenas chamar o workflow central:
+Project repositories **MUST NOT copy Terraform steps**. Instead, they should only call the central workflow:
 
 ```yaml
 uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
 ```
 
-O `core-terraform.yml` orquestra automaticamente o fluxo correto baseado no evento (PR, push para main, ou workflow_dispatch).
+The `core-terraform.yml` automatically orchestrates the correct flow based on the event (PR, push to main, or workflow_dispatch).
 
-## 📋 Estrutura do Repositório
+## 📋 Repository Structure
 
 ```
 .
 ├── .github/
 │   └── workflows/
-│       ├── core-terraform.yml        # Orquestrador principal (chamado pelos consumidores)
-│       ├── terraform-plan.yml        # Executa scans, validações e plan
-│       └── terraform-apply.yml       # Executa apply
+│       ├── core-terraform.yml        # Main orchestrator (called by consumers)
+│       ├── terraform-plan.yml        # Executes scans, validations and plan
+│       └── terraform-apply.yml       # Executes apply
 ├── actions/
 │   ├── setup-terraform/
 │   │   ├── action.yml                # Composite action: Setup Terraform
@@ -31,11 +31,11 @@ O `core-terraform.yml` orquestra automaticamente o fluxo correto baseado no even
 └── README.md
 ```
 
-## 🚀 Como Usar
+## 🚀 How to Use
 
-### Exemplo Básico
+### Basic Example
 
-Crie um arquivo `.github/workflows/iac.yml` no seu repositório de projeto:
+Create a `.github/workflows/iac.yml` file in your project repository:
 
 ```yaml
 name: Infrastructure as Code
@@ -68,50 +68,135 @@ jobs:
       INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 ```
 
-### Inputs Obrigatórios
+### Multiple Terraform Directories
 
-| Input | Tipo | Descrição |
-|-------|------|-----------|
-| `aws_region` | string | Região AWS a ser usada |
+If your repository has multiple Terraform directories (e.g., `terraform/00-vpc`, `terraform/01-eks-cluster`), you have two options:
 
-### Secrets Obrigatórias
+#### Option 1: Multiple Jobs (Recommended)
 
-| Secret | Descrição |
-|--------|-----------|
-| `AWS_ASSUME_ROLE` | ARN da role OIDC para todas as operações (plan e apply) |
+Create separate jobs for each directory:
 
-### Inputs Opcionais
+```yaml
+name: Infrastructure as Code
 
-| Input | Tipo | Default | Descrição |
-|-------|------|---------|-----------|
-| `tf_version` | string | `1.7.5` | Versão do Terraform |
-| `working_directory` | string | `.` | Diretório de trabalho do Terraform |
-| `backend_config_file` | string | `""` | Caminho opcional para arquivo de configuração do backend |
-| `enable_infracost` | boolean | `true` | Habilitar estimativa de custo com Infracost |
-| `enable_trivy` | boolean | `true` | Habilitar scan de segurança com Trivy |
-| `enable_checkov` | boolean | `true` | Habilitar scan de segurança com Checkov |
-| `enable_tflint` | boolean | `true` | Habilitar TFLint |
-| `enable_tfsec` | boolean | `false` | Habilitar scan de segurança com TFSec |
-| `plan_on_push_main` | boolean | `true` | Executar plan no push para main |
-| `apply_on_push_main` | boolean | `true` | Executar apply no push para main |
-| `comment_plan_on_pr` | boolean | `true` | Comentar resumo do plan no PR |
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform-vpc:
+    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    with:
+      aws_region: us-east-1
+      working_directory: terraform/00-vpc
+      plan_on_push_main: true
+      apply_on_push_main: true
+    secrets:
+      AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
+
+  terraform-eks:
+    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    with:
+      aws_region: us-east-1
+      working_directory: terraform/01-eks-cluster
+      plan_on_push_main: true
+      apply_on_push_main: true
+    secrets:
+      AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
+```
+
+**Note:** Jobs run in parallel by default. If you need sequential execution (e.g., EKS depends on VPC), use `needs`:
+
+```yaml
+  terraform-eks:
+    needs: terraform-vpc
+    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    # ... rest of config
+```
+
+#### Option 2: Matrix Strategy
+
+Use a matrix to run the same workflow for multiple directories:
+
+```yaml
+name: Infrastructure as Code
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    strategy:
+      matrix:
+        directory:
+          - terraform/00-vpc
+          - terraform/01-eks-cluster
+          - terraform/02-rds
+    uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+    with:
+      aws_region: us-east-1
+      working_directory: ${{ matrix.directory }}
+      plan_on_push_main: true
+      apply_on_push_main: true
+    secrets:
+      AWS_ASSUME_ROLE: ${{ secrets.AWS_ASSUME_ROLE }}
+```
+
+**Note:** With matrix strategy, all directories run in parallel. Dependencies between directories are not automatically handled.
+
+### Required Inputs
+
+| Input | Type | Description |
+|-------|------|-------------|
+| `aws_region` | string | AWS region to use |
+
+### Required Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `AWS_ASSUME_ROLE` | ARN of the OIDC role for all operations (plan and apply) |
+
+### Optional Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tf_version` | string | `1.7.5` | Terraform version |
+| `working_directory` | string | `.` | Terraform working directory |
+| `backend_config_file` | string | `""` | Optional backend config file path |
+| `enable_infracost` | boolean | `true` | Enable Infracost cost estimation |
+| `enable_trivy` | boolean | `true` | Enable Trivy security scanning |
+| `enable_checkov` | boolean | `true` | Enable Checkov security scanning |
+| `enable_tflint` | boolean | `true` | Enable TFLint |
+| `enable_tfsec` | boolean | `false` | Enable TFSec security scanning |
+| `plan_on_push_main` | boolean | `true` | Run plan on push to main branch |
+| `apply_on_push_main` | boolean | `true` | Run apply on push to main branch |
+| `comment_plan_on_pr` | boolean | `true` | Comment plan summary on PR |
 
 ### Secrets
 
-| Secret | Obrigatório | Descrição |
-|--------|-------------|-----------|
-| `AWS_ASSUME_ROLE` | Sim | ARN da role OIDC para todas as operações (plan e apply) |
-| `INFRACOST_API_KEY` | Não | Chave da API do Infracost para estimativa de custo |
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `AWS_ASSUME_ROLE` | Yes | ARN of the OIDC role for all operations (plan and apply) |
+| `INFRACOST_API_KEY` | No | Infracost API key for cost estimation |
 
-## 🔐 Autenticação AWS via OIDC
+## 🔐 AWS Authentication via OIDC
 
-Este pipeline usa **OIDC (OpenID Connect)** para autenticação na AWS, eliminando a necessidade de armazenar access keys como secrets.
+This pipeline uses **OIDC (OpenID Connect)** for AWS authentication, eliminating the need to store access keys as secrets.
 
-### Configuração da Role IAM
+### IAM Role Configuration
 
-1. Crie uma role IAM com as permissões necessárias para Terraform.
+1. Create an IAM role with the necessary permissions for Terraform.
 
-2. Configure a trust policy da role para permitir o GitHub Actions assumir a role:
+2. Configure the role's trust policy to allow GitHub Actions to assume the role:
 
 ```json
 {
@@ -136,167 +221,167 @@ Este pipeline usa **OIDC (OpenID Connect)** para autenticação na AWS, eliminan
 }
 ```
 
-**Nota:** Ajuste o `sub` para corresponder ao seu repositório ou organização. Exemplos:
-- `repo:ORG/*:*` - Todos os repositórios da organização
-- `repo:ORG/my-repo:*` - Repositório específico
-- `repo:ORG/my-repo:ref:refs/heads/main` - Apenas branch main
+**Note:** Adjust the `sub` to match your repository or organization. Examples:
+- `repo:ORG/*:*` - All repositories in the organization
+- `repo:ORG/my-repo:*` - Specific repository
+- `repo:ORG/my-repo:ref:refs/heads/main` - Main branch only
 
-3. Para projetos consumidores, use:
+3. For consumer projects, use:
 ```json
 "token.actions.githubusercontent.com:sub": "repo:ORG/my-project:*"
 ```
 
-### Variáveis Necessárias
+### Required Variables
 
-Configure a seguinte secret no seu repositório GitHub (Settings → Secrets and variables → Actions):
+Configure the following secret in your GitHub repository (Settings → Secrets and variables → Actions):
 
-- `AWS_ASSUME_ROLE`: ARN da role OIDC para todas as operações (ex: `arn:aws:iam::123456789012:role/github-actions-terraform`)
+- `AWS_ASSUME_ROLE`: ARN of the OIDC role for all operations (e.g., `arn:aws:iam::123456789012:role/github-actions-terraform`)
 
-**Nota:** A ARN é armazenada como secret para não expor o account ID nos workflows. A mesma role é usada para operações de plan e apply.
+**Note:** The ARN is stored as a secret to avoid exposing the account ID in workflows. The same role is used for both plan and apply operations.
 
-## 🛡️ Environment Apply (Gate de Aprovação)
+## 🛡️ Environment Apply (Approval Gate)
 
-O pipeline implementa um **gate obrigatório** para operações de apply através de um GitHub Environment chamado `apply`.
+The pipeline implements a **mandatory gate** for apply operations through a GitHub Environment called `apply`.
 
-### Como Configurar
+### How to Configure
 
-1. No repositório, vá em **Settings** → **Environments**
-2. Crie um novo environment chamado `apply`
-3. Configure **Required reviewers** (adicione usuários ou equipes que devem aprovar)
-4. Opcionalmente, configure **Deployment branches** para restringir a branches específicas
+1. In the repository, go to **Settings** → **Environments**
+2. Create a new environment named `apply`
+3. Configure **Required reviewers** (add users or teams that must approve)
+4. Optionally, configure **Deployment branches** to restrict to specific branches
 
-### Comportamento
+### Behavior
 
-- **Pull Requests**: Apenas executa plan e scans (sem apply)
-- **Push para main**: Se `apply_on_push_main=true`, requer aprovação no environment `apply` antes de executar apply
-- **workflow_dispatch**: Se `mode=apply` e `run_apply=true`, também requer aprovação no environment `apply`
+- **Pull Requests**: Only executes plan and scans (no apply)
+- **Push to main**: If `apply_on_push_main=true`, requires approval in the `apply` environment before executing apply
+- **workflow_dispatch**: If `mode=apply` and `run_apply=true`, also requires approval in the `apply` environment
 
-O gate garante que nenhum apply seja executado sem aprovação manual explícita.
+The gate ensures that no apply is executed without explicit manual approval.
 
-## 📦 Versionamento
+## 📦 Versioning
 
-O pipeline é versionado usando **tags Git**. Use tags semânticas:
+The pipeline is versioned using **Git tags**. Use semantic tags:
 
-- `v1` - Versão estável
+- `v1` - Stable version
 - `v1.0.1` - Patch release
 - `v1.1.0` - Minor release
 
-**Exemplo de uso:**
+**Usage example:**
 ```yaml
 uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
 ```
 
-Recomendamos fixar a versão major (`@v1`) para receber patches automaticamente, ou fixar versão específica (`@v1.0.1`) para máxima estabilidade.
+We recommend pinning the major version (`@v1`) to receive patches automatically, or pinning a specific version (`@v1.0.1`) for maximum stability.
 
-## 🔍 Ferramentas e Scans
+## 🔍 Tools and Scans
 
 ### Terraform
 
-- **fmt**: Verifica formatação (`terraform fmt -check -recursive`)
-- **validate**: Valida configuração (`terraform validate -no-color`)
-- **init**: Inicializa backend (suporta `backend_config_file`)
-- **plan**: Gera plano (`terraform plan -out=tfplan`)
-- **apply**: Aplica mudanças usando artifact do plan
+- **fmt**: Checks formatting (`terraform fmt -check -recursive`)
+- **validate**: Validates configuration (`terraform validate -no-color`)
+- **init**: Initializes backend (supports `backend_config_file`)
+- **plan**: Generates plan (`terraform plan -out=tfplan`)
+- **apply**: Applies changes using plan artifact
 
 ### TFLint
 
-Linter para Terraform. Habilitado por padrão (`enable_tflint: true`).
+Linter for Terraform. Enabled by default (`enable_tflint: true`).
 
 ### Security Scans
 
 #### Trivy
-- Scan de configuração Terraform
-- Falha em vulnerabilidades CRITICAL ou HIGH
-- Habilitado por padrão
+- Terraform configuration scan
+- Fails on CRITICAL or HIGH vulnerabilities
+- Enabled by default
 
 #### Checkov
-- Análise estática de infraestrutura
+- Static infrastructure analysis
 - Framework: Terraform
-- Habilitado por padrão
+- Enabled by default
 
 #### TFSec
-- Scanner de segurança específico para Terraform
-- Desabilitado por padrão (`enable_tfsec: false`)
-- Falha em vulnerabilidades HIGH ou CRITICAL
+- Security scanner specific to Terraform
+- Disabled by default (`enable_tfsec: false`)
+- Fails on HIGH or CRITICAL vulnerabilities
 
 ### Infracost
 
-Estimativa de custo de infraestrutura:
-- Gera relatório JSON
-- Comenta automaticamente no PR (se habilitado)
-- Requer `INFRACOST_API_KEY` secret
+Infrastructure cost estimation:
+- Generates JSON report
+- Automatically comments on PR (if enabled)
+- Requires `INFRACOST_API_KEY` secret
 
 ## 📊 Step Summary
 
-Todos os workflows geram um **Step Summary** bonito no final da execução, incluindo:
-- Status de cada etapa (fmt, validate, lint, scans, plan)
-- Link para artifact do plan
-- Informações sobre Infracost (se habilitado)
-- Status geral do pipeline
+All workflows generate a beautiful **Step Summary** at the end of execution, including:
+- Status of each step (fmt, validate, lint, scans, plan)
+- Link to plan artifact
+- Infracost information (if enabled)
+- Overall pipeline status
 
-O summary é visível na aba "Summary" da execução do workflow.
+The summary is visible in the "Summary" tab of the workflow run.
 
-## 🔄 Fluxo de Execução
+## 🔄 Execution Flow
 
 ### Pull Request
 
-1. Validação de inputs
+1. Input validation
 2. **Terraform Plan** (`terraform-plan.yml`):
    - fmt check
    - validate
    - init
-   - Security Scans (Trivy, Checkov, TFSec - se habilitados)
-   - tflint (se habilitado)
+   - Security Scans (Trivy, Checkov, TFSec - if enabled)
+   - tflint (if enabled)
    - plan
    - upload artifact
-   - Infracost (se habilitado e API key presente)
-   - Comentar no PR (se habilitado)
+   - Infracost (if enabled and API key present)
+   - Comment on PR (if enabled)
 3. Step Summary
 
-### Push para Main
+### Push to Main
 
-1. Validação de inputs
-2. **Gate de Aprovação** (environment `apply`)
-3. **Terraform Plan** (`terraform-plan.yml`) - se `plan_on_push_main=true`
-4. **Terraform Apply** (`terraform-apply.yml`) - se `apply_on_push_main=true`, depende do plan
+1. Input validation
+2. **Approval Gate** (environment `apply`)
+3. **Terraform Plan** (`terraform-plan.yml`) - if `plan_on_push_main=true`
+4. **Terraform Apply** (`terraform-apply.yml`) - if `apply_on_push_main=true`, depends on plan
 5. Step Summary
 
 ### Workflow Dispatch
 
-- **mode=pr**: Executa pipeline de PR (sem apply)
+- **mode=pr**: Executes PR pipeline (no apply)
 - **mode=apply**: 
-  - Valida que está na branch `main`
-  - Valida que `run_apply=true`
-  - Passa pelo gate de aprovação
-  - Executa plan + apply
+  - Validates that it's on the `main` branch
+  - Validates that `run_apply=true`
+  - Passes through approval gate
+  - Executes plan + apply
 
-## 🔧 Configuração do Backend
+## 🔧 Backend Configuration
 
-Se você precisar passar configurações customizadas para o backend do Terraform, use o input `backend_config_file`:
+If you need to pass custom configurations to the Terraform backend, use the `backend_config_file` input:
 
 ```yaml
 with:
   backend_config_file: terraform/backend.hcl
 ```
 
-O arquivo deve conter variáveis de backend, por exemplo:
+The file should contain backend variables, for example:
 ```hcl
 bucket = "my-terraform-state"
 key    = "prod/terraform.tfstate"
 region = "us-east-1"
 ```
 
-O pipeline executará `terraform init -backend-config=backend_config_file`.
+The pipeline will execute `terraform init -backend-config=backend_config_file`.
 
 ## ❓ FAQ
 
-### Por que o apply precisa de aprovação?
+### Why does apply need approval?
 
-O apply modifica infraestrutura em produção. O gate de aprovação garante que mudanças críticas sejam revisadas manualmente antes de serem aplicadas, reduzindo o risco de incidentes.
+Apply modifies production infrastructure. The approval gate ensures that critical changes are manually reviewed before being applied, reducing the risk of incidents.
 
-### Como habilitar/desabilitar scanners?
+### How to enable/disable scanners?
 
-Use os inputs `enable_*`:
+Use the `enable_*` inputs:
 
 ```yaml
 with:
@@ -306,32 +391,62 @@ with:
   enable_tflint: true
 ```
 
-### Como configurar backend_config_file?
+### How to configure backend_config_file?
 
-Crie um arquivo de configuração (ex: `backend.hcl`) e passe o caminho:
+Create a configuration file (e.g., `backend.hcl`) and pass the path:
 
 ```yaml
 with:
   backend_config_file: terraform/backend.hcl
 ```
 
-### Posso usar roles separadas para plan e apply?
+### How to handle multiple Terraform directories?
 
-Sim, mas por padrão o pipeline usa a mesma role (`AWS_ASSUME_ROLE`) para todas as operações. Se você precisar de roles separadas, você pode:
+If you have multiple Terraform directories (e.g., `terraform/00-vpc`, `terraform/01-eks-cluster`), you can:
 
-1. Criar duas roles com permissões diferentes:
-   - Role para plan: Permissões de leitura (Get, List, Describe)
-   - Role para apply: Permissões completas (Create, Update, Delete)
+1. **Use multiple jobs** (recommended for dependencies):
+   ```yaml
+   jobs:
+     terraform-vpc:
+       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       with:
+         working_directory: terraform/00-vpc
+     terraform-eks:
+       needs: terraform-vpc  # Run after VPC
+       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       with:
+         working_directory: terraform/01-eks-cluster
+   ```
 
-2. Modificar o pipeline para usar roles diferentes (requer alteração no código do pipeline)
+2. **Use matrix strategy** (for parallel execution):
+   ```yaml
+   jobs:
+     terraform:
+       strategy:
+         matrix:
+           directory: [terraform/00-vpc, terraform/01-eks-cluster]
+       uses: ORG/terraform-pipeline/.github/workflows/core-terraform.yml@v1
+       with:
+         working_directory: ${{ matrix.directory }}
+   ```
 
-**Recomendação:** Para a maioria dos casos, uma única role com permissões apropriadas é suficiente e mais simples de gerenciar.
+### Can I use separate roles for plan and apply?
 
-### O que acontece se plan falhar?
+Yes, but by default the pipeline uses the same role (`AWS_ASSUME_ROLE`) for all operations. If you need separate roles, you can:
 
-O apply não será executado. O workflow falha na etapa de plan.
+1. Create two roles with different permissions:
+   - Role for plan: Read permissions (Get, List, Describe)
+   - Role for apply: Full permissions (Create, Update, Delete)
 
-### Como desabilitar apply automático no push?
+2. Modify the pipeline to use different roles (requires changes to pipeline code)
+
+**Recommendation:** For most cases, a single role with appropriate permissions is sufficient and simpler to manage.
+
+### What happens if plan fails?
+
+Apply will not be executed. The workflow fails at the plan step.
+
+### How to disable automatic apply on push?
 
 ```yaml
 with:
@@ -339,25 +454,24 @@ with:
   apply_on_push_main: false
 ```
 
-Isso executará apenas o plan no push para main.
+This will only execute plan on push to main.
 
-### Posso usar este pipeline com outros clouds?
+### Can I use this pipeline with other clouds?
 
-Atualmente, o pipeline é otimizado para AWS com OIDC. Para outros clouds, seria necessário adaptar a autenticação e os workflows.
+Currently, the pipeline is optimized for AWS with OIDC. For other clouds, it would be necessary to adapt the authentication and workflows.
 
-### Como funciona o cache do Terraform?
+### How does Terraform cache work?
 
-O pipeline usa cache baseado no hash de `.terraform.lock.hcl`. Isso acelera `terraform init` em execuções subsequentes.
+The pipeline uses cache based on the hash of `.terraform.lock.hcl`. This speeds up `terraform init` in subsequent runs.
 
-## 📝 Licença
+## 📝 License
 
-Este repositório é fornecido como está. Ajuste conforme necessário para suas necessidades.
+This repository is provided as-is. Adjust as needed for your requirements.
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-Para melhorias ou correções, abra uma issue ou pull request no repositório.
+For improvements or fixes, open an issue or pull request in the repository.
 
 ---
 
-**Nota:** Substitua `ORG` pelos nomes reais da sua organização e ajuste ARNs e configurações conforme seu ambiente.
-
+**Note:** Replace `ORG` with your organization's actual names and adjust ARNs and configurations according to your environment.
