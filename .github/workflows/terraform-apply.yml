@@ -31,6 +31,9 @@ jobs:
   apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    environment:
+      name: apply
+      url: https://github.com/${{ github.repository }}
     permissions:
       id-token: write
       contents: read
