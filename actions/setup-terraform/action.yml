@@ -1,0 +1,51 @@
+name: 'Setup Terraform'
+description: 'Composite action to setup Terraform with caching and optional tools'
+
+inputs:
+  tf_version:
+    description: 'Terraform version to install'
+    required: false
+    default: '1.7.5'
+  enable_tflint:
+    description: 'Install TFLint'
+    required: false
+    default: 'false'
+  enable_tfsec:
+    description: 'Install TFSec'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache Terraform plugins
+      id: cache-terraform
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.terraform.d/plugin-cache
+          ${{ github.workspace }}/.terraform
+        key: terraform-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          terraform-${{ runner.os }}-
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.tf_version }}
+        terraform_wrapper: false
+
+    - name: Install TFLint
+      if: inputs.enable_tflint == 'true'
+      shell: bash
+      run: |
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        sudo mv tflint /usr/local/bin/
+
+    - name: Install TFSec
+      if: inputs.enable_tfsec == 'true'
+      shell: bash
+      run: |
+        curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+        sudo mv tfsec /usr/local/bin/
+
