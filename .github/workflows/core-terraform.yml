@@ -96,11 +96,15 @@ jobs:
             exit 1
           fi
 
-  handle-pull-request:
-    name: Terraform Plan (PR)
+  terraform-plan:
+    name: Terraform Plan
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main')
+      (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main') ||
+      ((github.event_name == 'push' || github.event_name == 'workflow_call') &&
+       github.ref == 'refs/heads/main' &&
+       (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.mode == 'pr' || (inputs.mode == 'apply' && inputs.run_apply == 'true')))
     needs: validate-inputs
     uses: ./.github/workflows/terraform-plan.yml
     with:
@@ -108,12 +112,12 @@ jobs:
       working_directory: ${{ inputs.working_directory }}
       aws_region: ${{ inputs.aws_region }}
       backend_config_file: ${{ inputs.backend_config_file }}
-      enable_infracost: ${{ inputs.enable_infracost }}
+      enable_infracost: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'pr')) && inputs.enable_infracost }}
       enable_trivy: ${{ inputs.enable_trivy }}
       enable_checkov: ${{ inputs.enable_checkov }}
       enable_tflint: ${{ inputs.enable_tflint }}
       enable_tfsec: ${{ inputs.enable_tfsec }}
-      comment_plan_on_pr: ${{ inputs.comment_plan_on_pr }}
+      comment_plan_on_pr: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_call' && github.ref != 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'pr')) && inputs.comment_plan_on_pr }}
       artifact_name: tfplan
     secrets:
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
@@ -123,40 +127,14 @@ jobs:
       contents: read
       pull-requests: write
 
-  terraform-plan-main:
-    name: Terraform Plan (Main)
+  terraform-apply:
+    name: Terraform Apply
     if: |
-      (github.event_name == 'push' || github.event_name == 'workflow_call') &&
-      github.ref == 'refs/heads/main' &&
-      (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')
-    needs: validate-inputs
-    uses: ./.github/workflows/terraform-plan.yml
-    with:
-      tf_version: ${{ inputs.tf_version }}
-      working_directory: ${{ inputs.working_directory }}
-      aws_region: ${{ inputs.aws_region }}
-      backend_config_file: ${{ inputs.backend_config_file }}
-      enable_infracost: false
-      enable_trivy: ${{ inputs.enable_trivy }}
-      enable_checkov: ${{ inputs.enable_checkov }}
-      enable_tflint: ${{ inputs.enable_tflint }}
-      enable_tfsec: ${{ inputs.enable_tfsec }}
-      comment_plan_on_pr: false
-      artifact_name: tfplan
-    secrets:
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-
-  terraform-apply-main:
-    name: Terraform Apply (Main)
-    if: |
-      (github.event_name == 'push' || github.event_name == 'workflow_call') &&
-      github.ref == 'refs/heads/main' &&
-      inputs.apply_on_push_main == 'true'
-    needs: terraform-plan-main
+      ((github.event_name == 'push' || github.event_name == 'workflow_call') &&
+       github.ref == 'refs/heads/main' &&
+       inputs.apply_on_push_main == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply' && inputs.run_apply == 'true')
+    needs: terraform-plan
     uses: ./.github/workflows/terraform-apply.yml
     with:
       tf_version: ${{ inputs.tf_version }}
@@ -169,77 +147,3 @@ jobs:
     permissions:
       id-token: write
       contents: read
-
-  terraform-plan-dispatch:
-    name: Terraform Plan (Manual)
-    if: |
-      github.event_name == 'workflow_dispatch' &&
-      inputs.mode == 'apply' &&
-      inputs.run_apply == 'true'
-    needs: validate-inputs
-    uses: ./.github/workflows/terraform-plan.yml
-    with:
-      tf_version: ${{ inputs.tf_version }}
-      working_directory: ${{ inputs.working_directory }}
-      aws_region: ${{ inputs.aws_region }}
-      backend_config_file: ${{ inputs.backend_config_file }}
-      enable_infracost: false
-      enable_trivy: ${{ inputs.enable_trivy }}
-      enable_checkov: ${{ inputs.enable_checkov }}
-      enable_tflint: ${{ inputs.enable_tflint }}
-      enable_tfsec: ${{ inputs.enable_tfsec }}
-      comment_plan_on_pr: false
-      artifact_name: tfplan
-    secrets:
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-
-  terraform-apply-dispatch:
-    name: Terraform Apply (Manual)
-    if: |
-      github.event_name == 'workflow_dispatch' &&
-      inputs.mode == 'apply' &&
-      inputs.run_apply == 'true'
-    needs: terraform-plan-dispatch
-    uses: ./.github/workflows/terraform-apply.yml
-    with:
-      tf_version: ${{ inputs.tf_version }}
-      working_directory: ${{ inputs.working_directory }}
-      aws_region: ${{ inputs.aws_region }}
-      backend_config_file: ${{ inputs.backend_config_file }}
-      artifact_name: tfplan
-    secrets:
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
-    permissions:
-      id-token: write
-      contents: read
-
-  handle-workflow-dispatch-pr:
-    name: Terraform Plan (Manual PR)
-    if: |
-      github.event_name == 'workflow_dispatch' &&
-      inputs.mode == 'pr'
-    needs: validate-inputs
-    uses: ./.github/workflows/terraform-plan.yml
-    with:
-      tf_version: ${{ inputs.tf_version }}
-      working_directory: ${{ inputs.working_directory }}
-      aws_region: ${{ inputs.aws_region }}
-      backend_config_file: ${{ inputs.backend_config_file }}
-      enable_infracost: ${{ inputs.enable_infracost }}
-      enable_trivy: ${{ inputs.enable_trivy }}
-      enable_checkov: ${{ inputs.enable_checkov }}
-      enable_tflint: ${{ inputs.enable_tflint }}
-      enable_tfsec: ${{ inputs.enable_tfsec }}
-      comment_plan_on_pr: false
-      artifact_name: tfplan
-    secrets:
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ASSUME_ROLE }}
-      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
