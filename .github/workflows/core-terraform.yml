@@ -160,7 +160,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_call') &&
       github.ref == 'refs/heads/main' &&
       (inputs.plan_on_push_main == 'true' || inputs.apply_on_push_main == 'true')
-    needs: [validate-inputs, approve-apply]
+    needs: validate-inputs
     uses: ./.github/workflows/terraform-plan.yml
     with:
       tf_version: ${{ inputs.tf_version }}
@@ -187,7 +187,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_call') &&
       github.ref == 'refs/heads/main' &&
       inputs.apply_on_push_main == 'true'
-    needs: terraform-plan-main
+    needs: [terraform-plan-main, approve-apply]
     uses: ./.github/workflows/terraform-apply.yml
     with:
       tf_version: ${{ inputs.tf_version }}
@@ -207,7 +207,7 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       inputs.mode == 'apply' &&
       inputs.run_apply == 'true'
-    needs: [validate-inputs, approve-apply]
+    needs: validate-inputs
     uses: ./.github/workflows/terraform-plan.yml
     with:
       tf_version: ${{ inputs.tf_version }}
@@ -234,7 +234,7 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       inputs.mode == 'apply' &&
       inputs.run_apply == 'true'
-    needs: terraform-plan-dispatch
+    needs: [terraform-plan-dispatch, approve-apply]
     uses: ./.github/workflows/terraform-apply.yml
     with:
       tf_version: ${{ inputs.tf_version }}
